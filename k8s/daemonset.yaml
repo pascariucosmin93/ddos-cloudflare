@@ -26,6 +26,10 @@ spec:
           command: ["modprobe", "nf_conntrack"]
           securityContext:
             privileged: true
+          volumeMounts:
+            - name: lib-modules
+              mountPath: /lib/modules
+              readOnly: true
       containers:
         - name: agent
           image: ghcr.io/pascariucosmin93/ddos-agent:0.0.7
@@ -66,4 +70,8 @@ spec:
         - name: proc
           hostPath:
             path: /proc/net
+            type: Directory
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
             type: Directory
