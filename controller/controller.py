@@ -194,9 +194,13 @@ def collect_top_sources(limit: int, include_trusted: bool):
 
     aggregated: dict[str, int] = defaultdict(int)
     by_node: dict[str, list] = {}
+    include_trusted_flag = 'true' if include_trusted else 'false'
 
     for agent_ip in agent_ips:
-        url = f'http://{agent_ip}:{AGENT_PORT}/top?limit={limit}&include_trusted={"true" if include_trusted else "false"}'
+        url = (
+            f'http://{agent_ip}:{AGENT_PORT}/top?limit={limit}'
+            f'&include_trusted={include_trusted_flag}'
+        )
         try:
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
@@ -213,7 +217,10 @@ def collect_top_sources(limit: int, include_trusted: bool):
     top_cluster = sorted(aggregated.items(), key=lambda item: item[1], reverse=True)[:limit]
     return (
         {
-            'cluster_top': [{'ip': ip, 'connections': count, 'trusted': is_trusted_ip(ip)} for ip, count in top_cluster],
+            'cluster_top': [
+                {'ip': ip, 'connections': count, 'trusted': is_trusted_ip(ip)}
+                for ip, count in top_cluster
+            ],
             'by_node': by_node,
         },
         200,
@@ -273,7 +280,7 @@ if __name__ == '__main__':
     log.info('Starting DDoS controller')
     log.info(
         f'Global blocks enabled={ENABLE_GLOBAL_BLOCKS}, threshold={GLOBAL_BLOCK_THRESHOLD}, '
-        f'trusted={ [str(v) for v in trusted_networks] }'
+        f'trusted={[str(v) for v in trusted_networks]}'
     )
     t = threading.Thread(target=sync_loop, daemon=True)
     t.start()
