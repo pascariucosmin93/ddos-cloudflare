@@ -18,6 +18,8 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - operator: Exists
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: agent
           image: ghcr.io/pascariucosmin93/ddos-agent:latest

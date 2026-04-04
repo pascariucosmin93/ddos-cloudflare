@@ -16,6 +16,8 @@ spec:
         app: ddos-controller
     spec:
       serviceAccountName: ddos-controller
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: controller
           image: ghcr.io/pascariucosmin93/ddos-controller:latest
