@@ -202,7 +202,30 @@ def cf_request(method: str, path: str, **kwargs) -> dict[str, Any] | None:
 def cf_resolve_list_id() -> str | None:
     global CF_LIST_ID
     if CF_LIST_ID:
-        return CF_LIST_ID
+        try:
+            resp = requests.get(
+                f'{CF_API_BASE}/accounts/{CF_ACCOUNT_ID}/rules/lists/{CF_LIST_ID}',
+                headers=cf_headers(),
+                timeout=HTTP_TIMEOUT,
+            )
+            if resp.status_code == 404:
+                log.warning(
+                    'Configured CF_LIST_ID not found via API; '
+                    'falling back to CF_LIST_NAME discovery'
+                )
+                CF_LIST_ID = ''
+            else:
+                resp.raise_for_status()
+                payload = resp.json()
+                if payload.get('success', False):
+                    return CF_LIST_ID
+                log.error(
+                    'Cloudflare list id validation failed: '
+                    f'{payload.get("errors")}'
+                )
+        except Exception as exc:
+            log.error(f'Cloudflare list id validation failed: {exc}')
+            return None
     if not CF_LIST_NAME:
         return None
 

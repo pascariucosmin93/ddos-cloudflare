@@ -28,7 +28,7 @@ Important env vars:
 - `BLOCK_MODE` (`cloudflare|cilium|both`)
 - `CF_API_TOKEN` (Secret)
 - `CF_ACCOUNT_ID` (Secret)
-- `CF_LIST_ID` (Secret, recommended)
+- `CF_LIST_ID` (Secret, optional; must be API list id, not list name)
 - `TRUSTED_CIDRS`
 
 ## Deploy
