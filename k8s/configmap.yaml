@@ -18,6 +18,12 @@ data:
   BLOCK_MODE: "cloudflare"
   POLICY_NAME: "ddos-blocklist"
 
+  # Shared blocklist for app-level filtering (CF-Connecting-IP)
+  BLOCKLIST_SYNC_ENABLED: "true"
+  BLOCKLIST_CONFIGMAP_NAMESPACE: "ddos-protection"
+  BLOCKLIST_CONFIGMAP_NAME: "ddos-blocklist"
+  BLOCKLIST_CONFIGMAP_KEY: "blocked_ips.txt"
+
   # Cloudflare (token/account/list in Secret)
   CF_LIST_NAME: "ddos_blocklist"
   CF_SYNC_ON_START: "true"

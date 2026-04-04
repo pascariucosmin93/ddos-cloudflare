@@ -38,6 +38,10 @@ NODE_NAME = os.getenv('NODE_NAME', 'unknown')
 POLICY_NAME = os.getenv('POLICY_NAME', 'ddos-blocklist')
 BLOCK_MODE = os.getenv('BLOCK_MODE', 'cloudflare').strip().lower()
 HTTP_TIMEOUT = int(os.getenv('HTTP_TIMEOUT_SECONDS', '10'))
+BLOCKLIST_SYNC_ENABLED = os.getenv('BLOCKLIST_SYNC_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes')
+BLOCKLIST_CONFIGMAP_NAME = os.getenv('BLOCKLIST_CONFIGMAP_NAME', 'ddos-blocklist')
+BLOCKLIST_CONFIGMAP_NAMESPACE = os.getenv('BLOCKLIST_CONFIGMAP_NAMESPACE', 'ddos-protection')
+BLOCKLIST_CONFIGMAP_KEY = os.getenv('BLOCKLIST_CONFIGMAP_KEY', 'blocked_ips.txt')
 
 CF_API_BASE = os.getenv('CF_API_BASE', 'https://api.cloudflare.com/client/v4').rstrip('/')
 CF_API_TOKEN = os.getenv('CF_API_TOKEN', '')
@@ -62,6 +66,8 @@ cf_item_ids: dict[str, str] = {}        # ip -> cloudflare list item id
 event_log = deque(maxlen=500)
 last_scan: dict[str, int] = {}
 last_scan_at: datetime | None = None
+blocklist_last_sync_at: datetime | None = None
+blocklist_last_sync_error: str | None = None
 state_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
@@ -71,6 +77,7 @@ CILIUM_GROUP = 'cilium.io'
 CILIUM_VERSION = 'v2'
 CILIUM_PLURAL = 'ciliumclusterwidenetworkpolicies'
 custom_api = None
+core_v1_api = None
 
 
 def cilium_enabled() -> bool:
@@ -81,12 +88,83 @@ def cloudflare_enabled() -> bool:
     return BLOCK_MODE in ('cloudflare', 'both')
 
 
+try:
+    k8s_config.load_incluster_config()
+except Exception:
+    k8s_config.load_kube_config()
+
+core_v1_api = client.CoreV1Api()
+
 if cilium_enabled():
-    try:
-        k8s_config.load_incluster_config()
-    except Exception:
-        k8s_config.load_kube_config()
     custom_api = client.CustomObjectsApi()
+
+
+def sync_shared_blocklist_configmap(blocked_list: list[str]) -> bool:
+    """Sync blocked IPs into a shared ConfigMap consumed by nginx/middleware."""
+    global blocklist_last_sync_at, blocklist_last_sync_error
+
+    if not BLOCKLIST_SYNC_ENABLED or core_v1_api is None:
+        return True
+
+    blocked_sorted = sorted(set(blocked_list))
+    payload = '\n'.join(blocked_sorted)
+    if payload:
+        payload += '\n'
+
+    body = {
+        'apiVersion': 'v1',
+        'kind': 'ConfigMap',
+        'metadata': {'name': BLOCKLIST_CONFIGMAP_NAME},
+        'data': {
+            BLOCKLIST_CONFIGMAP_KEY: payload,
+            'updatedAt': datetime.utcnow().isoformat(),
+        },
+    }
+    patch_body = {
+        'data': body['data'],
+    }
+
+    try:
+        core_v1_api.read_namespaced_config_map(BLOCKLIST_CONFIGMAP_NAME, BLOCKLIST_CONFIGMAP_NAMESPACE)
+        core_v1_api.patch_namespaced_config_map(
+            name=BLOCKLIST_CONFIGMAP_NAME,
+            namespace=BLOCKLIST_CONFIGMAP_NAMESPACE,
+            body=patch_body,
+        )
+        blocklist_last_sync_at = datetime.utcnow()
+        blocklist_last_sync_error = None
+        return True
+    except ApiException as exc:
+        if exc.status != 404:
+            blocklist_last_sync_error = f'patch failed: {exc}'
+            log.error(
+                f'Blocklist ConfigMap patch failed ({BLOCKLIST_CONFIGMAP_NAMESPACE}/'
+                f'{BLOCKLIST_CONFIGMAP_NAME}): {exc}'
+            )
+            return False
+    except Exception as exc:
+        blocklist_last_sync_error = f'patch failed: {exc}'
+        log.error(
+            f'Blocklist ConfigMap patch failed ({BLOCKLIST_CONFIGMAP_NAMESPACE}/'
+            f'{BLOCKLIST_CONFIGMAP_NAME}): {exc}'
+        )
+        return False
+
+    try:
+        core_v1_api.create_namespaced_config_map(
+            namespace=BLOCKLIST_CONFIGMAP_NAMESPACE,
+            body=body,
+        )
+        blocklist_last_sync_at = datetime.utcnow()
+        blocklist_last_sync_error = None
+        return True
+    except Exception as exc:
+        blocklist_last_sync_error = f'create failed: {exc}'
+        log.error(
+            f'Blocklist ConfigMap create failed ({BLOCKLIST_CONFIGMAP_NAMESPACE}/'
+            f'{BLOCKLIST_CONFIGMAP_NAME}): {exc}'
+        )
+        return False
 
 
 def build_policy(blocked: list[str]) -> dict:
@@ -381,6 +459,7 @@ def block_ip(ip: str, reason: str, rpm: int | None = None) -> bool:
                 apply_cilium_policy(list(blocked_ips.keys()))
             else:
                 delete_cilium_policy()
+        sync_shared_blocklist_configmap(list(blocked_ips.keys()))
         event_log.append({
             'time': now.isoformat(),
             'action': reason,
@@ -401,6 +480,7 @@ def unblock_ip(ip: str, reason: str) -> bool:
                 apply_cilium_policy(list(blocked_ips.keys()))
             else:
                 delete_cilium_policy()
+        sync_shared_blocklist_configmap(list(blocked_ips.keys()))
 
     cf_ok = True
     if cloudflare_enabled():
@@ -414,6 +494,7 @@ def unblock_ip(ip: str, reason: str) -> bool:
             blocked_ips[ip] = previous_expiry
             if cilium_enabled():
                 apply_cilium_policy(list(blocked_ips.keys()))
+            sync_shared_blocklist_configmap(list(blocked_ips.keys()))
         return False
 
     if previous_expiry:
@@ -688,6 +769,10 @@ def status():
             'cloudflare_enabled': cloudflare_enabled(),
             'cloudflare_ready': cloudflare_ready(),
             'cloudflare_list_id': CF_LIST_ID,
+            'blocklist_sync_enabled': BLOCKLIST_SYNC_ENABLED,
+            'blocklist_configmap': f'{BLOCKLIST_CONFIGMAP_NAMESPACE}/{BLOCKLIST_CONFIGMAP_NAME}',
+            'blocklist_last_sync_at': blocklist_last_sync_at.isoformat() if blocklist_last_sync_at else None,
+            'blocklist_last_sync_error': blocklist_last_sync_error,
         })
 
 
@@ -702,6 +787,32 @@ def get_blocked():
             }
             for ip, exp in blocked_ips.items()
         })
+
+
+@app.route('/blocklist')
+def get_blocklist():
+    with state_lock:
+        return jsonify({
+            'items': sorted(blocked_ips.keys()),
+            'count': len(blocked_ips),
+            'configmap': {
+                'enabled': BLOCKLIST_SYNC_ENABLED,
+                'namespace': BLOCKLIST_CONFIGMAP_NAMESPACE,
+                'name': BLOCKLIST_CONFIGMAP_NAME,
+                'key': BLOCKLIST_CONFIGMAP_KEY,
+                'last_sync_at': blocklist_last_sync_at.isoformat() if blocklist_last_sync_at else None,
+                'last_sync_error': blocklist_last_sync_error,
+            },
+        })
+
+
+@app.route('/blocklist.txt')
+def get_blocklist_text():
+    with state_lock:
+        lines = '\n'.join(sorted(blocked_ips.keys()))
+    if lines:
+        lines += '\n'
+    return app.response_class(lines, mimetype='text/plain')
 
 
 @app.route('/top')
@@ -773,6 +884,11 @@ if __name__ == '__main__':
             cf_items = cf_fetch_items()
             cf_item_ids.update(cf_items)
             log.info(f'Cloudflare list synced on start: {len(cf_items)} item(s)')
+    log.info(
+        f'Blocklist ConfigMap sync: enabled={BLOCKLIST_SYNC_ENABLED}, '
+        f'target={BLOCKLIST_CONFIGMAP_NAMESPACE}/{BLOCKLIST_CONFIGMAP_NAME}:{BLOCKLIST_CONFIGMAP_KEY}'
+    )
+    sync_shared_blocklist_configmap([])
 
     threading.Thread(target=monitor_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=8080)

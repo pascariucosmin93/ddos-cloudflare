@@ -10,6 +10,8 @@ DDoS protection agent for Kubernetes using Loki traffic signals and automatic bl
 - `cloudflare`: add/remove IPs in Cloudflare account list (recommended for tunnel traffic).
 - `cilium`: manage `CiliumClusterwideNetworkPolicy` deny list.
 - `both`: apply both providers.
+- Shared blocklist sync: blocked IPs are also written to ConfigMap `ddos-blocklist` (`blocked_ips.txt`)
+  for nginx/middleware app-level filtering by `CF-Connecting-IP`.
 - Web UI/API exposed on port `8080` for status + manual block/unblock.
 
 ## Config
@@ -29,6 +31,10 @@ Important env vars:
 - `CF_API_TOKEN` (Secret)
 - `CF_ACCOUNT_ID` (Secret)
 - `CF_LIST_ID` (Secret, optional; must be API list id, not list name)
+- `BLOCKLIST_SYNC_ENABLED`
+- `BLOCKLIST_CONFIGMAP_NAMESPACE`
+- `BLOCKLIST_CONFIGMAP_NAME`
+- `BLOCKLIST_CONFIGMAP_KEY`
 - `TRUSTED_CIDRS`
 
 ## Deploy
@@ -37,6 +43,7 @@ Important env vars:
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/rbac.yaml
 kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/blocklist-configmap.yaml
 kubectl apply -f k8s/cloudflare-secret.example.yaml
 kubectl apply -f k8s/daemonset.yaml
 ```
@@ -58,6 +65,7 @@ kubectl -n ddos-protection logs -l app=ddos-agent --tail=100
 kubectl -n ddos-protection port-forward ds/ddos-agent 8080:8080
 curl -s http://127.0.0.1:8080/status | jq
 curl -s "http://127.0.0.1:8080/top?limit=20" | jq
+curl -s http://127.0.0.1:8080/blocklist | jq
 ```
 
 ## Manual API
@@ -65,4 +73,5 @@ curl -s "http://127.0.0.1:8080/top?limit=20" | jq
 ```bash
 curl -s -X POST http://127.0.0.1:8080/block -H 'Content-Type: application/json' -d '{"ip":"1.2.3.4"}'
 curl -s -X POST http://127.0.0.1:8080/unblock -H 'Content-Type: application/json' -d '{"ip":"1.2.3.4"}'
+curl -s http://127.0.0.1:8080/blocklist.txt
 ```

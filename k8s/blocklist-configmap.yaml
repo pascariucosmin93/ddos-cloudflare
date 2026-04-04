@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ddos-blocklist
+  namespace: ddos-protection
+data:
+  blocked_ips.txt: ""
+  updatedAt: ""
