@@ -7,12 +7,11 @@ on:
     paths:
       - "agent/**"
       - "controller/**"
-      - "k8s/**"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -26,7 +25,7 @@ jobs:
   build-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -94,3 +93,19 @@ jobs:
         run: |
           docker push ${{ steps.img.outputs.controller }}:${{ steps.vars.outputs.short_sha }}
           docker push ${{ steps.img.outputs.controller }}:${{ steps.vars.outputs.dev_version }}
+
+      - name: Update image tags in manifests
+        env:
+          DEV_VERSION: ${{ steps.vars.outputs.dev_version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          sed -i "s|ghcr.io/${OWNER,,}/ddos-agent:[^ ]*|ghcr.io/${OWNER,,}/ddos-agent:${DEV_VERSION}|g" k8s/daemonset.yaml
+          sed -i "s|ghcr.io/${OWNER,,}/ddos-controller:[^ ]*|ghcr.io/${OWNER,,}/ddos-controller:${DEV_VERSION}|g" k8s/deployment.yaml
+
+      - name: Commit updated manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8s/daemonset.yaml k8s/deployment.yaml
+          git diff --cached --quiet || git commit -m "chore: update image tags to ${{ steps.vars.outputs.dev_version }}"
+          git push
