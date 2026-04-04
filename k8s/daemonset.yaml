@@ -20,6 +20,12 @@ spec:
         - operator: Exists
       imagePullSecrets:
         - name: ghcr-pull-secret
+      initContainers:
+        - name: load-conntrack
+          image: busybox
+          command: ["modprobe", "nf_conntrack"]
+          securityContext:
+            privileged: true
       containers:
         - name: agent
           image: ghcr.io/pascariucosmin93/ddos-agent:0.0.7
