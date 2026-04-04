@@ -14,6 +14,7 @@ spec:
       labels:
         app: ddos-agent
     spec:
+      serviceAccountName: ddos-controller
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       tolerations:
@@ -44,6 +45,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: ddos-config
+            - secretRef:
+                name: ddos-cloudflare
           securityContext:
             capabilities:
               add:

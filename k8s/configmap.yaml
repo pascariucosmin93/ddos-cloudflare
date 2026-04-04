@@ -4,13 +4,27 @@ metadata:
   name: ddos-config
   namespace: ddos-protection
 data:
-  # Agent config
-  THRESHOLD_CONNECTIONS: "5"         # conexiuni de la acelasi IP in fereastra de timp
-  THRESHOLD_WINDOW_SECONDS: "60"     # fereastra de timp in secunde
-  BLOCK_TTL_SECONDS: "600"           # cat timp e blocat IP-ul (10 minute)
-  POLL_INTERVAL_SECONDS: "10"        # cat de des citeste conntrack
-  WHITELIST_IPS: "10.90.90.9,192.168.70.1"  # IP-uri de whitelistuit (router, etc.)
+  # Loki — sursa de date
+  LOKI_URL: "http://10.90.90.32:3100"
+  LOKI_NAMESPACES: "cv|gaz"                  # namespace-uri monitorizate (regex)
 
-  # Controller config
-  GLOBAL_BLOCK_THRESHOLD: "2"        # blocat pe >= N noduri → block global Cilium
-  SYNC_INTERVAL_SECONDS: "15"        # cat de des agrega controllerul
+  # Praguri
+  THRESHOLD_RPM: "100"                       # requesturi/minut per IP
+  BLOCK_TTL_SECONDS: "300"                   # 5 minute blocat
+  POLL_INTERVAL_SECONDS: "30"                # interogare Loki la 30s
+  HTTP_TIMEOUT_SECONDS: "10"
+
+  # Provider blocare: cloudflare | cilium | both
+  BLOCK_MODE: "cloudflare"
+  POLICY_NAME: "ddos-blocklist"
+
+  # Cloudflare (token/account/list in Secret)
+  CF_LIST_NAME: "ddos_blocklist"
+  CF_SYNC_ON_START: "true"
+
+  # iptables fallback (pentru trafic direct, non-Cloudflare)
+  ENABLE_IPTABLES: "false"
+  PROTECTED_PORTS: "80,443"
+
+  # IP-uri de incredere — nu se blocheaza niciodata
+  TRUSTED_CIDRS: "10.90.90.0/24,192.168.70.0/24,127.0.0.1/32,10.244.0.0/16"
