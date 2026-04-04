@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  agent-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install agent dependencies
+        run: pip install -r requirements.txt flake8
+
+      - name: Lint agent
+        run: flake8 agent.py --max-line-length=120
+
+  controller-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: controller
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install controller dependencies
+        run: pip install -r requirements.txt flake8
+
+      - name: Lint controller
+        run: flake8 controller.py --max-line-length=120
+
+  k8s-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Kubernetes manifests
+        uses: azure/k8s-lint@v1
+        with:
+          manifests: |
+            k8s/namespace.yaml
+            k8s/rbac.yaml
+            k8s/configmap.yaml
+            k8s/daemonset.yaml
+            k8s/deployment.yaml

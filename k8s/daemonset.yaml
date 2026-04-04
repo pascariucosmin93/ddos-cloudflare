@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ddos-agent
+  namespace: ddos-protection
+  labels:
+    app: ddos-agent
+spec:
+  selector:
+    matchLabels:
+      app: ddos-agent
+  template:
+    metadata:
+      labels:
+        app: ddos-agent
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: agent
+          image: your-registry/ddos-agent:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              hostPort: 18080
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          envFrom:
+            - configMapRef:
+                name: ddos-config
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          volumeMounts:
+            - name: proc
+              mountPath: /proc/net/nf_conntrack
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: proc
+          hostPath:
+            path: /proc/net/nf_conntrack

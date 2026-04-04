@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ddos-controller
+  namespace: ddos-protection
+  labels:
+    app: ddos-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ddos-controller
+  template:
+    metadata:
+      labels:
+        app: ddos-controller
+    spec:
+      serviceAccountName: ddos-controller
+      containers:
+        - name: controller
+          image: your-registry/ddos-controller:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: ddos-config
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ddos-controller
+  namespace: ddos-protection
+spec:
+  selector:
+    app: ddos-controller
+  ports:
+    - port: 8080
+      targetPort: 8080
