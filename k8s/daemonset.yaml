@@ -60,3 +60,4 @@ spec:
         - name: proc
           hostPath:
             path: /proc/net/nf_conntrack
+            type: File
