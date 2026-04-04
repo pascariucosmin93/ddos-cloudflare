@@ -30,21 +30,20 @@ conn_history: dict[str, list] = defaultdict(list)
 state_lock = threading.Lock()
 
 
-CONNTRACK_PATH = os.getenv('CONNTRACK_PATH', '/host/proc/net/nf_conntrack')
-
-
 def read_conntrack() -> dict[str, int]:
-    """Read nf_conntrack and count connections per source IP."""
+    """Read conntrack entries and count connections per source IP."""
     counts: dict[str, int] = defaultdict(int)
     try:
-        with open(CONNTRACK_PATH, 'r') as f:
-            for line in f:
-                parts = line.split()
-                for part in parts:
-                    if part.startswith('src='):
-                        ip = part[4:]
-                        counts[ip] += 1
-                        break
+        result = subprocess.run(
+            ['conntrack', '-L'],
+            capture_output=True, text=True
+        )
+        for line in result.stdout.splitlines():
+            for part in line.split():
+                if part.startswith('src='):
+                    ip = part[4:]
+                    counts[ip] += 1
+                    break
     except Exception as e:
         log.warning(f"Cannot read conntrack: {e}")
     return counts

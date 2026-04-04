@@ -1,6 +1,6 @@
 FROM python:3.12-alpine
 
-RUN apk add --no-cache iptables
+RUN apk add --no-cache iptables conntrack-tools
 
 WORKDIR /app
 COPY requirements.txt .

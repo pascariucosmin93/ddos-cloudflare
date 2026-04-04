@@ -49,10 +49,6 @@ spec:
               add:
                 - NET_ADMIN
                 - NET_RAW
-          volumeMounts:
-            - name: proc
-              mountPath: /host/proc/net
-              readOnly: true
           livenessProbe:
             httpGet:
               path: /health
@@ -67,10 +63,6 @@ spec:
               cpu: 200m
               memory: 128Mi
       volumes:
-        - name: proc
-          hostPath:
-            path: /proc/net
-            type: Directory
         - name: lib-modules
           hostPath:
             path: /lib/modules
