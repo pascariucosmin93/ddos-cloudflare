@@ -17,6 +17,7 @@ data:
   # Provider blocare: cloudflare | cilium | both
   BLOCK_MODE: "cloudflare"
   POLICY_NAME: "ddos-blocklist"
+  PROTECTED_NAMESPACES: "cv|gaz"
 
   # Shared blocklist for app-level filtering (CF-Connecting-IP)
   BLOCKLIST_SYNC_ENABLED: "true"
