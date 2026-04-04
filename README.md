@@ -44,6 +44,7 @@ kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/rbac.yaml
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/blocklist-configmap.yaml
+kubectl apply -f k8s/agent-service.yaml
 kubectl apply -f k8s/cloudflare-secret.example.yaml
 kubectl apply -f k8s/daemonset.yaml
 ```
