@@ -29,21 +29,21 @@ app = Flask(__name__)
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-LOKI_URL         = os.getenv('LOKI_URL', 'http://10.90.90.32:3100')
-LOKI_NAMESPACES  = os.getenv('LOKI_NAMESPACES', '.+')
-THRESHOLD_RPM    = int(os.getenv('THRESHOLD_RPM', '100'))
-BLOCK_TTL        = int(os.getenv('BLOCK_TTL_SECONDS', '300'))
-POLL_INTERVAL    = int(os.getenv('POLL_INTERVAL_SECONDS', '30'))
-NODE_NAME        = os.getenv('NODE_NAME', 'unknown')
-POLICY_NAME      = os.getenv('POLICY_NAME', 'ddos-blocklist')
-BLOCK_MODE       = os.getenv('BLOCK_MODE', 'cloudflare').strip().lower()
-HTTP_TIMEOUT     = int(os.getenv('HTTP_TIMEOUT_SECONDS', '10'))
+LOKI_URL = os.getenv('LOKI_URL', 'http://10.90.90.32:3100')
+LOKI_NAMESPACES = os.getenv('LOKI_NAMESPACES', '.+')
+THRESHOLD_RPM = int(os.getenv('THRESHOLD_RPM', '100'))
+BLOCK_TTL = int(os.getenv('BLOCK_TTL_SECONDS', '300'))
+POLL_INTERVAL = int(os.getenv('POLL_INTERVAL_SECONDS', '30'))
+NODE_NAME = os.getenv('NODE_NAME', 'unknown')
+POLICY_NAME = os.getenv('POLICY_NAME', 'ddos-blocklist')
+BLOCK_MODE = os.getenv('BLOCK_MODE', 'cloudflare').strip().lower()
+HTTP_TIMEOUT = int(os.getenv('HTTP_TIMEOUT_SECONDS', '10'))
 
-CF_API_BASE      = os.getenv('CF_API_BASE', 'https://api.cloudflare.com/client/v4').rstrip('/')
-CF_API_TOKEN     = os.getenv('CF_API_TOKEN', '')
-CF_ACCOUNT_ID    = os.getenv('CF_ACCOUNT_ID', '')
-CF_LIST_ID       = os.getenv('CF_LIST_ID', '')
-CF_LIST_NAME     = os.getenv('CF_LIST_NAME', 'ddos_blocklist').strip()
+CF_API_BASE = os.getenv('CF_API_BASE', 'https://api.cloudflare.com/client/v4').rstrip('/')
+CF_API_TOKEN = os.getenv('CF_API_TOKEN', '')
+CF_ACCOUNT_ID = os.getenv('CF_ACCOUNT_ID', '')
+CF_LIST_ID = os.getenv('CF_LIST_ID', '')
+CF_LIST_NAME = os.getenv('CF_LIST_NAME', 'ddos_blocklist').strip()
 CF_SYNC_ON_START = os.getenv('CF_SYNC_ON_START', 'true').strip().lower() in ('1', 'true', 'yes')
 
 TRUSTED_RAW = [v.strip() for v in os.getenv('TRUSTED_CIDRS', '').split(',') if v.strip()]
@@ -59,18 +59,18 @@ for v in TRUSTED_RAW:
 # ---------------------------------------------------------------------------
 blocked_ips: dict[str, datetime] = {}   # ip -> expiry
 cf_item_ids: dict[str, str] = {}        # ip -> cloudflare list item id
-event_log        = deque(maxlen=500)
+event_log = deque(maxlen=500)
 last_scan: dict[str, int] = {}
 last_scan_at: datetime | None = None
-state_lock       = threading.Lock()
+state_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Kubernetes / Cilium
 # ---------------------------------------------------------------------------
-CILIUM_GROUP   = 'cilium.io'
+CILIUM_GROUP = 'cilium.io'
 CILIUM_VERSION = 'v2'
-CILIUM_PLURAL  = 'ciliumclusterwidenetworkpolicies'
-custom_api      = None
+CILIUM_PLURAL = 'ciliumclusterwidenetworkpolicies'
+custom_api = None
 
 
 def cilium_enabled() -> bool:
@@ -411,11 +411,11 @@ def monitor_loop():
     global last_scan, last_scan_at
 
     while True:
-        now    = datetime.utcnow()
+        now = datetime.utcnow()
         counts = query_loki()
 
         with state_lock:
-            last_scan    = counts.copy()
+            last_scan = counts.copy()
             last_scan_at = now
 
             to_block = [
@@ -474,9 +474,11 @@ def ui():
   .bar-fill.danger { background: #f85149; }
   .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
   .form-row { display: flex; gap: 8px; margin-top: 12px; }
-  input[type=text] { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; padding: 8px 12px; font-family: monospace; font-size: 13px; }
+  input[type=text] { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    color: #c9d1d9; padding: 8px 12px; font-family: monospace; font-size: 13px; }
   input[type=text]:focus { outline: none; border-color: #58a6ff; }
-  button { padding: 8px 16px; border: none; border-radius: 6px; font-family: monospace; font-size: 13px; cursor: pointer; font-weight: bold; }
+  button { padding: 8px 16px; border: none; border-radius: 6px; font-family: monospace;
+    font-size: 13px; cursor: pointer; font-weight: bold; }
   .btn-block { background: #f85149; color: white; }
   .btn-block:hover { background: #da3633; }
   .btn-unblock { background: #3fb950; color: #0d1117; }
@@ -485,7 +487,8 @@ def ui():
   .event .ip { color: #58a6ff; }
   .event .block { color: #f85149; }
   .event .unblock { color: #3fb950; }
-  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3fb950; margin-right: 6px; animation: pulse 2s infinite; }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: #3fb950; margin-right: 6px; animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   .refresh-info { font-size: 11px; color: #8b949e; margin-bottom: 16px; }
 </style>
@@ -543,10 +546,14 @@ async function refresh() {
 
   // Stats
   document.getElementById('stats').innerHTML = `
-    <div class="card"><div class="stat-value ${status.blocked_count > 0 ? 'red' : 'green'}">${status.blocked_count}</div><div class="stat-label">IP-uri blocate</div></div>
-    <div class="card"><div class="stat-value">${status.tracked_ips}</div><div class="stat-label">IP-uri monitorizate</div></div>
-    <div class="card"><div class="stat-value">${status.threshold_rpm}</div><div class="stat-label">Prag (req/min)</div></div>
-    <div class="card"><div class="stat-value">${status.block_ttl_seconds}s</div><div class="stat-label">Block TTL</div></div>
+    <div class="card"><div class="stat-value ${status.blocked_count > 0 ? 'red' : 'green'}">
+      ${status.blocked_count}</div><div class="stat-label">IP-uri blocate</div></div>
+    <div class="card"><div class="stat-value">${status.tracked_ips}</div>
+      <div class="stat-label">IP-uri monitorizate</div></div>
+    <div class="card"><div class="stat-value">${status.threshold_rpm}</div>
+      <div class="stat-label">Prag (req/min)</div></div>
+    <div class="card"><div class="stat-value">${status.block_ttl_seconds}s</div>
+      <div class="stat-label">Block TTL</div></div>
   `;
 
   // Top IPs
@@ -577,7 +584,8 @@ async function refresh() {
         return `<tr>
           <td><span class="badge badge-red">${ip}</span></td>
           <td>${fmt(rem)}</td>
-          <td><button class="btn-unblock" style="padding:4px 10px;font-size:11px" onclick="unblockIP('${ip}')">Deblocheaza</button></td>
+          <td><button class="btn-unblock" style="padding:4px 10px;font-size:11px"
+            onclick="unblockIP('${ip}')">Deblocheaza</button></td>
         </tr>`;
       }).join('');
 
@@ -585,7 +593,8 @@ async function refresh() {
   document.getElementById('events').innerHTML = events.items.reverse().map(e => {
     const cls = e.action.includes('block') && !e.action.includes('un') ? 'block' : 'unblock';
     const extra = e.rpm ? ` — ${e.rpm} req/min` : '';
-    return `<div class="event">${e.time} <span class="${cls}">[${e.action.toUpperCase()}]</span> <span class="ip">${e.ip}</span>${extra}</div>`;
+    return `<div class="event">${e.time} <span class="${cls}">[${e.action.toUpperCase()}]</span>
+      <span class="ip">${e.ip}</span>${extra}</div>`;
   }).join('') || '<div style="color:#8b949e;font-size:12px">Niciun eveniment</div>';
 
   document.getElementById('refresh-info').textContent =
@@ -595,9 +604,14 @@ async function refresh() {
 async function manualBlock() {
   const ip = document.getElementById('ip-input').value.trim();
   if (!ip) return;
-  const r = await fetch('/block', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ip})});
+  const r = await fetch('/block', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ip})
+  });
   const d = await r.json();
-  document.getElementById('action-msg').textContent = d.blocked ? `Blocat: ${d.blocked}` : (d.error || 'Eroare');
+  document.getElementById('action-msg').textContent =
+    d.blocked ? `Blocat: ${d.blocked}` : (d.error || 'Eroare');
   refresh();
 }
 
@@ -608,9 +622,14 @@ async function manualUnblock() {
 }
 
 async function unblockIP(ip) {
-  const r = await fetch('/unblock', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ip})});
+  const r = await fetch('/unblock', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ip})
+  });
   const d = await r.json();
-  document.getElementById('action-msg').textContent = d.unblocked ? `Deblocat: ${d.unblocked}` : (d.error || 'Eroare');
+  document.getElementById('action-msg').textContent =
+    d.unblocked ? `Deblocat: ${d.unblocked}` : (d.error || 'Eroare');
   document.getElementById('ip-input').value = ip;
   refresh();
 }
@@ -694,7 +713,7 @@ def events():
 @app.route('/block', methods=['POST'])
 def manual_block():
     data = flask_request.get_json() or {}
-    ip   = data.get('ip', '').strip()
+    ip = data.get('ip', '').strip()
     if not ip:
         return jsonify({'error': 'ip required'}), 400
     if is_trusted(ip):
@@ -708,7 +727,7 @@ def manual_block():
 @app.route('/unblock', methods=['POST'])
 def manual_unblock():
     data = flask_request.get_json() or {}
-    ip   = data.get('ip', '').strip()
+    ip = data.get('ip', '').strip()
     if not ip:
         return jsonify({'error': 'ip required'}), 400
     ok = unblock_ip(ip, reason='manual_unblock')
