@@ -20,7 +20,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: controller
-          image: ghcr.io/pascariucosmin93/ddos-controller:0.0.5
+          image: ghcr.io/pascariucosmin93/ddos-controller:0.0.7
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
