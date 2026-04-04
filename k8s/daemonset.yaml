@@ -33,7 +33,7 @@ spec:
               readOnly: true
       containers:
         - name: agent
-          image: ghcr.io/pascariucosmin93/ddos-agent:0.0.7
+          image: ghcr.io/pascariucosmin93/ddos-agent:0.0.2
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
