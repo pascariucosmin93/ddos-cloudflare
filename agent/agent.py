@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import time
-import json
 import logging
 import subprocess
 import threading

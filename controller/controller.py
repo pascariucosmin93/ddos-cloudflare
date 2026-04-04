@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 import os
 import time
-import json
 import logging
 import threading
 import requests
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 
-import kubernetes
 from kubernetes import client as k8s_client, config as k8s_config
 from kubernetes.client.rest import ApiException
 
