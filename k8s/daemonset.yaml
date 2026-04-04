@@ -41,7 +41,7 @@ spec:
                 - NET_RAW
           volumeMounts:
             - name: proc
-              mountPath: /proc/net
+              mountPath: /host/proc/net
               readOnly: true
           livenessProbe:
             httpGet:
