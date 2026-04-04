@@ -20,7 +20,7 @@ spec:
         - operator: Exists
       containers:
         - name: agent
-          image: your-registry/ddos-agent:latest
+          image: ghcr.io/pascariucosmin93/ddos-agent:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

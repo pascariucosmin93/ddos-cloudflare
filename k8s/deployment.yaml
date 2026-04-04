@@ -18,7 +18,7 @@ spec:
       serviceAccountName: ddos-controller
       containers:
         - name: controller
-          image: your-registry/ddos-controller:latest
+          image: ghcr.io/pascariucosmin93/ddos-controller:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
