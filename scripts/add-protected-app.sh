@@ -23,7 +23,8 @@ CV_WEBSITE="$(dirname "$DDOS_REPO")/cv-website"
 # SSH jump pentru kubectl
 SSH_JUMP="root@10.90.90.9"
 SSH_NODE="devops@192.168.70.20"
-KUBECTL="ssh -o StrictHostKeyChecking=no -J $SSH_JUMP $SSH_NODE kubectl"
+KUBECTL="ssh -n -o StrictHostKeyChecking=no -J $SSH_JUMP $SSH_NODE kubectl"
+KUBECTL_APPLY="ssh -o StrictHostKeyChecking=no -J $SSH_JUMP $SSH_NODE kubectl"
 
 info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
 success() { echo -e "${GREEN}[OK]${NC}   $*"; }
@@ -196,12 +197,12 @@ fi
 step "Pasul 3: Aplicare în cluster (via SSH)"
 
 if [ "$SKIP_NETPOL" = false ]; then
-  $KUBECTL apply -f - < "$NETPOL_FILE" && success "CiliumNetworkPolicy aplicat" || \
+  $KUBECTL_APPLY apply -f - <"$NETPOL_FILE" && success "CiliumNetworkPolicy aplicat" || \
     warn "Aplică manual: kubectl apply -f $NETPOL_FILE"
 fi
 
 if [ "$SKIP_CONFIGMAP" = false ]; then
-  $KUBECTL apply -f - < "$CONFIGMAP" && success "ConfigMap actualizat în cluster" || \
+  $KUBECTL_APPLY apply -f - <"$CONFIGMAP" && success "ConfigMap actualizat în cluster" || \
     warn "Aplică manual: kubectl apply -f k8s/configmap.yaml -n ddos-protection"
   $KUBECTL rollout restart daemonset/ddos-agent -n ddos-protection && \
     success "ddos-agent restartat" || warn "Restart manual necesar"
