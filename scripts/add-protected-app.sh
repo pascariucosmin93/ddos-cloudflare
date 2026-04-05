@@ -83,15 +83,17 @@ step "Pasul 1: Actualizare ddos-protect-k8s/k8s/configmap.yaml"
 if [ "$SKIP_CONFIGMAP" = false ]; then
   NEW_NS="${CURRENT_NS}|${NAMESPACE}"
 
-  # LOKI_NAMESPACES
-  sed -i.bak "s|LOKI_NAMESPACES: \"${CURRENT_NS}\"|LOKI_NAMESPACES: \"${NEW_NS}\"|" "$CONFIGMAP"
-
-  # PROTECTED_NAMESPACES (poate fi diferit, actualizăm și pe el)
+  # PROTECTED_NAMESPACES (poate fi diferit de LOKI_NAMESPACES)
   CURRENT_PROT=$(grep 'PROTECTED_NAMESPACES:' "$CONFIGMAP" | sed 's/.*"\(.*\)".*/\1/')
   NEW_PROT="${CURRENT_PROT}|${NAMESPACE}"
-  sed -i.bak "s|PROTECTED_NAMESPACES: \"${CURRENT_PROT}\"|PROTECTED_NAMESPACES: \"${NEW_PROT}\"|" "$CONFIGMAP"
 
-  rm -f "$CONFIGMAP.bak"
+  # Folosim Python ca sa evitam probleme cu | in sed pe macOS
+  python3 - <<PYEOF
+content = open("$CONFIGMAP").read()
+content = content.replace('LOKI_NAMESPACES: "$CURRENT_NS"', 'LOKI_NAMESPACES: "$NEW_NS"')
+content = content.replace('PROTECTED_NAMESPACES: "$CURRENT_PROT"', 'PROTECTED_NAMESPACES: "$NEW_PROT"')
+open("$CONFIGMAP", "w").write(content)
+PYEOF
   success "LOKI_NAMESPACES → $NEW_NS"
   success "PROTECTED_NAMESPACES → $NEW_PROT"
 else
