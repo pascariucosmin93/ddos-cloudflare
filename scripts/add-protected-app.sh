@@ -13,11 +13,12 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Paths (relative la rădăcina repo-ului ddos-protect-k8s)
+# Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DDOS_REPO="$(dirname "$SCRIPT_DIR")"
 NETPOL_REPO="$(dirname "$DDOS_REPO")/k8s-network-policies"
 CONFIGMAP="$DDOS_REPO/k8s/configmap.yaml"
+CV_WEBSITE="$(dirname "$DDOS_REPO")/cv-website"
 
 # SSH jump pentru kubectl
 SSH_JUMP="root@10.90.90.9"
@@ -35,26 +36,21 @@ step()    { echo -e "\n${CYAN}══ $* ${NC}"; }
 # =============================================================================
 step "Configurare aplicație nouă"
 
-if [ -n "$1" ]; then
-  NAMESPACE="$1"
-else
-  read -rp "  Namespace Kubernetes: " NAMESPACE
-fi
+if [ -n "$1" ]; then NAMESPACE="$1"; else read -rp "  Namespace Kubernetes: " NAMESPACE; fi
 [ -z "$NAMESPACE" ] && error "Namespace-ul nu poate fi gol."
 
-if [ -n "$2" ]; then
-  APP_LABEL="$2"
-else
-  read -rp "  Label aplicație (app=?): " APP_LABEL
-fi
+if [ -n "$2" ]; then APP_LABEL="$2"; else read -rp "  Label aplicație (app=?): " APP_LABEL; fi
 [ -z "$APP_LABEL" ] && error "Label-ul nu poate fi gol."
 
 echo ""
 echo "  Tip aplicație:"
 echo "  1) nginx (static site)"
 echo "  2) Next.js (middleware.ts)"
-echo "  3) Altul (Python, Go, etc.)"
+echo "  3) Altul (manual)"
 read -rp "  Alege [1/2/3]: " APP_TYPE
+
+echo ""
+read -rp "  URL repo Git (SSH sau HTTPS, Enter pentru skip): " APP_REPO_URL
 
 # =============================================================================
 # Verificări
@@ -64,10 +60,9 @@ step "Verificări inițiale"
 [ -f "$CONFIGMAP" ] || error "Nu găsesc $CONFIGMAP"
 [ -d "$NETPOL_REPO" ] || error "Nu găsesc repo-ul k8s-network-policies la $NETPOL_REPO"
 
-# Verifică dacă namespace-ul e deja monitorizat
 CURRENT_NS=$(grep 'LOKI_NAMESPACES:' "$CONFIGMAP" | sed 's/.*"\(.*\)".*/\1/')
 if echo "$CURRENT_NS" | grep -qw "$NAMESPACE"; then
-  warn "Namespace-ul '$NAMESPACE' e deja în LOKI_NAMESPACES ($CURRENT_NS)"
+  warn "Namespace-ul '$NAMESPACE' e deja în LOKI_NAMESPACES"
   SKIP_CONFIGMAP=true
 else
   SKIP_CONFIGMAP=false
@@ -82,12 +77,9 @@ step "Pasul 1: Actualizare ddos-protect-k8s/k8s/configmap.yaml"
 
 if [ "$SKIP_CONFIGMAP" = false ]; then
   NEW_NS="${CURRENT_NS}|${NAMESPACE}"
-
-  # PROTECTED_NAMESPACES (poate fi diferit de LOKI_NAMESPACES)
   CURRENT_PROT=$(grep 'PROTECTED_NAMESPACES:' "$CONFIGMAP" | sed 's/.*"\(.*\)".*/\1/')
   NEW_PROT="${CURRENT_PROT}|${NAMESPACE}"
 
-  # Folosim Python ca sa evitam probleme cu | in sed pe macOS
   python3 - <<PYEOF
 content = open("$CONFIGMAP").read()
 content = content.replace('LOKI_NAMESPACES: "$CURRENT_NS"', 'LOKI_NAMESPACES: "$NEW_NS"')
@@ -108,16 +100,15 @@ step "Pasul 2: Creare network policy în k8s-network-policies/$NAMESPACE/"
 NETPOL_DIR="$NETPOL_REPO/$NAMESPACE"
 mkdir -p "$NETPOL_DIR"
 
-# Găsește următorul număr disponibil
-LAST_NUM=$(ls "$NETPOL_DIR"/*.yaml 2>/dev/null | grep -oE '^[0-9]+' | sort -n | tail -1)
-NEXT_NUM=$(printf "%02d" $(( ${LAST_NUM:-0} + 1 )))
-NETPOL_FILE="$NETPOL_DIR/${NEXT_NUM}-allow-ddos-agent-egress.yaml"
-
-if [ -f "$NETPOL_DIR"/*ddos-agent-egress* ] 2>/dev/null; then
-  warn "Network policy pentru ddos-agent există deja în $NETPOL_DIR"
+if ls "$NETPOL_DIR"/*ddos-agent-egress* &>/dev/null; then
+  warn "Network policy pentru ddos-agent există deja"
   SKIP_NETPOL=true
 else
   SKIP_NETPOL=false
+  LAST_NUM=$(ls "$NETPOL_DIR"/*.yaml 2>/dev/null | xargs -I{} basename {} | grep -oE '^[0-9]+' | sort -n | tail -1)
+  NEXT_NUM=$(printf "%02d" $(( ${LAST_NUM:-0} + 1 )))
+  NETPOL_FILE="$NETPOL_DIR/${NEXT_NUM}-allow-ddos-agent-egress.yaml"
+
   cat > "$NETPOL_FILE" <<EOF
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -141,38 +132,27 @@ EOF
 fi
 
 # =============================================================================
-# Pasul 3: Aplică network policy în cluster
+# Pasul 3: Aplică în cluster
 # =============================================================================
 step "Pasul 3: Aplicare în cluster (via SSH)"
 
 if [ "$SKIP_NETPOL" = false ]; then
-  if $KUBECTL apply -f - < "$NETPOL_FILE" 2>&1; then
-    success "CiliumNetworkPolicy aplicat în cluster"
-  else
-    warn "Nu s-a putut aplica automat. Rulează manual:"
-    echo "  kubectl apply -f $NETPOL_FILE"
-  fi
-else
-  info "Sărit (policy deja există)"
+  $KUBECTL apply -f - < "$NETPOL_FILE" && success "CiliumNetworkPolicy aplicat" || \
+    warn "Aplică manual: kubectl apply -f $NETPOL_FILE"
 fi
 
-# Aplică și configmap-ul actualizat + restart agent
 if [ "$SKIP_CONFIGMAP" = false ]; then
-  if $KUBECTL apply -f - < "$CONFIGMAP" 2>&1; then
-    success "ConfigMap actualizat în cluster"
-    $KUBECTL rollout restart daemonset/ddos-agent -n ddos-protection 2>&1 && \
-      success "ddos-agent restartat" || warn "Restart manual: kubectl rollout restart ds/ddos-agent -n ddos-protection"
-  else
+  $KUBECTL apply -f - < "$CONFIGMAP" && success "ConfigMap actualizat în cluster" || \
     warn "Aplică manual: kubectl apply -f k8s/configmap.yaml -n ddos-protection"
-  fi
+  $KUBECTL rollout restart daemonset/ddos-agent -n ddos-protection && \
+    success "ddos-agent restartat" || warn "Restart manual necesar"
 fi
 
 # =============================================================================
-# Pasul 4: Git commit + push
+# Pasul 4: Git push (ddos-protect-k8s + k8s-network-policies)
 # =============================================================================
-step "Pasul 4: Git push"
+step "Pasul 4: Git push infra"
 
-# ddos-protect-k8s
 if [ "$SKIP_CONFIGMAP" = false ]; then
   cd "$DDOS_REPO"
   git add k8s/configmap.yaml
@@ -180,7 +160,6 @@ if [ "$SKIP_CONFIGMAP" = false ]; then
     git push && success "ddos-protect-k8s pushuit" || warn "Push manual necesar în $DDOS_REPO"
 fi
 
-# k8s-network-policies
 if [ "$SKIP_NETPOL" = false ]; then
   cd "$NETPOL_REPO"
   git add "$NETPOL_FILE"
@@ -189,85 +168,278 @@ if [ "$SKIP_NETPOL" = false ]; then
 fi
 
 # =============================================================================
-# Pasul 5: Instrucțiuni pentru integrarea app-level
+# Pasul 5: Integrare în repo-ul aplicației
 # =============================================================================
 step "Pasul 5: Integrare în aplicație"
-echo ""
 
-case "$APP_TYPE" in
-  1)
-    echo -e "${YELLOW}nginx — adaugă în nginx.conf:${NC}"
-    cat <<'NGINX'
-    map $real_ip $ddos_blocked {
+if [ -z "$APP_REPO_URL" ]; then
+  warn "URL repo lipsă — sări integrarea automată"
+else
+  CLONE_DIR=$(mktemp -d)
+  info "Clonez $APP_REPO_URL în $CLONE_DIR ..."
+  git clone "$APP_REPO_URL" "$CLONE_DIR" || error "Clone eșuat pentru $APP_REPO_URL"
+  success "Repo clonat"
+
+  case "$APP_TYPE" in
+    # --------------------------------------------------------------------------
+    # nginx
+    # --------------------------------------------------------------------------
+    1)
+      # Găsește nginx.conf și Dockerfile
+      NGINX_CONF=$(find "$CLONE_DIR" -name "nginx.conf" | head -1)
+      DOCKERFILE=$(find "$CLONE_DIR" -name "Dockerfile" | head -1)
+      [ -z "$NGINX_CONF" ] && error "Nu găsesc nginx.conf în repo."
+      [ -z "$DOCKERFILE" ] && error "Nu găsesc Dockerfile în repo."
+
+      REPO_ROOT=$(dirname "$DOCKERFILE")
+      ENTRYPOINT="$REPO_ROOT/docker-entrypoint.sh"
+
+      # Copiază docker-entrypoint.sh din cv-website dacă nu există
+      if [ -f "$ENTRYPOINT" ]; then
+        info "docker-entrypoint.sh există deja — sărit"
+      else
+        if [ -f "$CV_WEBSITE/docker-entrypoint.sh" ]; then
+          cp "$CV_WEBSITE/docker-entrypoint.sh" "$ENTRYPOINT"
+          success "Copiat docker-entrypoint.sh din cv-website"
+        else
+          # Creează din template dacă cv-website nu e disponibil
+          cat > "$ENTRYPOINT" <<'ENTRYEOF'
+#!/bin/sh
+set -eu
+
+BLOCKLIST_URL="${BLOCKLIST_URL:-http://ddos-agent.ddos-protection.svc.cluster.local:8080/blocklist.txt}"
+SYNC_INTERVAL="${BLOCKLIST_SYNC_INTERVAL_SECONDS:-15}"
+BLOCKLIST_MAP_PATH="/etc/nginx/ddos/blocked_ips.map"
+
+mkdir -p /etc/nginx/ddos
+[ -f "$BLOCKLIST_MAP_PATH" ] || printf "# empty\n" > "$BLOCKLIST_MAP_PATH"
+
+update_blocklist_map() {
+  tmp_txt="/tmp/blocked_ips.txt"
+  tmp_map="/tmp/blocked_ips.map"
+  if ! curl -fsS --max-time 3 "$BLOCKLIST_URL" -o "$tmp_txt"; then
+    return 1
+  fi
+  {
+    echo "# generated by docker-entrypoint.sh"
+    sed 's/\r$//' "$tmp_txt" \
+      | awk 'NF {print $1}' \
+      | grep -E '^[0-9]+(\.[0-9]+){3}$' \
+      | sort -u \
+      | sed 's/\./\\./g' \
+      | awk '{printf("~^%s$ 1;\n", $0)}'
+  } > "$tmp_map"
+  mv "$tmp_map" "$BLOCKLIST_MAP_PATH"
+  return 0
+}
+
+update_blocklist_map || true
+
+(
+  while true; do
+    sleep "$SYNC_INTERVAL"
+    if update_blocklist_map; then
+      nginx -s reload >/dev/null 2>&1 || true
+    fi
+  done
+) &
+
+exec nginx -g 'daemon off;'
+ENTRYEOF
+          success "Creat docker-entrypoint.sh din template"
+        fi
+      fi
+
+      # Actualizează nginx.conf cu blocklist map + filter
+      python3 - <<PYEOF
+content = open("$NGINX_CONF").read()
+
+# Adaugă map block dacă nu există deja
+if "ddos_blocked" not in content:
+    map_block = '''
+    map \$real_ip \$ddos_blocked {
         default 0;
         include /etc/nginx/ddos/blocked_ips.map;
     }
-    server {
-        if ($ddos_blocked) { return 403; }
-        ...
-    }
-NGINX
-    echo ""
-    echo -e "${YELLOW}Copiază docker-entrypoint.sh din cv-website ca model.${NC}"
-    echo -e "${YELLOW}CMD din Dockerfile trebuie să fie: [\"/docker-entrypoint.sh\"]${NC}"
-    ;;
-  2)
-    echo -e "${YELLOW}Next.js — adaugă în middleware.ts blocul de mai jos:${NC}"
-    cat <<'NEXTJS'
-const DDOS_AGENT_URL = process.env.DDOS_AGENT_URL ??
+'''
+    # Inserează după primul map block existent sau înainte de server {
+    if 'map \$http_cf_connecting_ip' in content:
+        idx = content.find('\n    server {')
+        content = content[:idx] + map_block + content[idx:]
+    else:
+        idx = content.find('\n    server {')
+        content = content[:idx] + map_block + content[idx:]
+
+# Adaugă if block în server dacă nu există deja
+if '\$ddos_blocked' not in content or 'return 403' not in content:
+    server_open = content.find('server {')
+    # Găsește după listen/server_name, înainte de root/location
+    idx = content.find('\n        root ', server_open)
+    if idx == -1:
+        idx = content.find('\n        location ', server_open)
+    if idx != -1:
+        inject = '''
+        if (\$ddos_blocked) {
+            return 403;
+        }
+'''
+        content = content[:idx] + inject + content[idx:]
+
+open("$NGINX_CONF", "w").write(content)
+print("nginx.conf actualizat")
+PYEOF
+      success "nginx.conf actualizat cu DDoS filter"
+
+      # Actualizează Dockerfile
+      python3 - <<PYEOF
+content = open("$DOCKERFILE").read()
+changed = False
+
+# Adaugă COPY + chmod pentru entrypoint dacă nu există
+if "docker-entrypoint.sh" not in content:
+    # Inserează înainte de CMD
+    cmd_idx = content.rfind('\nCMD ')
+    inject = '\nCOPY docker-entrypoint.sh /docker-entrypoint.sh\nRUN chmod +x /docker-entrypoint.sh\n'
+    content = content[:cmd_idx] + inject + content[cmd_idx:]
+    changed = True
+
+# Schimbă CMD
+import re
+new_content = re.sub(
+    r'CMD\s+\[.*nginx.*\]',
+    'CMD ["/docker-entrypoint.sh"]',
+    content
+)
+if new_content != content:
+    content = new_content
+    changed = True
+
+open("$DOCKERFILE", "w").write(content)
+print("Dockerfile actualizat" if changed else "Dockerfile deja actualizat")
+PYEOF
+      success "Dockerfile actualizat (CMD → /docker-entrypoint.sh)"
+      ;;
+
+    # --------------------------------------------------------------------------
+    # Next.js
+    # --------------------------------------------------------------------------
+    2)
+      MIDDLEWARE=$(find "$CLONE_DIR" -name "middleware.ts" | head -1)
+      [ -z "$MIDDLEWARE" ] && error "Nu găsesc middleware.ts în repo."
+
+      python3 - <<PYEOF
+content = open("$MIDDLEWARE").read()
+
+if "isDdosBlocked" in content or "isBlockedIp" in content or "ddos-agent" in content:
+    print("DDoS block deja prezent în middleware.ts — sărit")
+else:
+    ddos_block = '''// ---------------------------------------------------------------------------
+// DDoS blocklist (fetched from ddos-agent, cached in memory)
+// ---------------------------------------------------------------------------
+const DDOS_AGENT_URL =
+  process.env.DDOS_AGENT_URL ??
   "http://ddos-agent.ddos-protection.svc.cluster.local:8080/blocklist";
 
-let blockedIpCache = new Set<string>();
-let blockedIpCacheExpiresAt = 0;
+let _blockedIpCache = new Set<string>();
+let _blockedIpCacheExpiresAt = 0;
 
 async function isBlockedIp(ip: string): Promise<boolean> {
+  if (!ip || ip === "unknown") return false;
   const now = Date.now();
-  if (now < blockedIpCacheExpiresAt) return blockedIpCache.has(ip);
+  if (now < _blockedIpCacheExpiresAt) return _blockedIpCache.has(ip);
   try {
     const res = await fetch(DDOS_AGENT_URL, {
-      cache: "no-store", signal: AbortSignal.timeout(1500)
+      cache: "no-store",
+      signal: AbortSignal.timeout(1500),
     });
     if (res.ok) {
       const data = await res.json();
-      blockedIpCache = new Set(data.items ?? []);
-      blockedIpCacheExpiresAt = now + 15_000;
+      _blockedIpCache = new Set(data.items ?? []);
+      _blockedIpCacheExpiresAt = now + 15_000;
     }
   } catch { /* fail silently */ }
-  return blockedIpCache.has(ip);
+  return _blockedIpCache.has(ip);
 }
 
-// La începutul middleware-ului:
-const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-if (await isBlockedIp(ip)) {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-}
-NEXTJS
-    ;;
-  3)
-    echo -e "${YELLOW}Consumă direct API-ul agentului:${NC}"
-    echo ""
-    echo "  Plain text:  GET http://ddos-agent.ddos-protection.svc.cluster.local:8080/blocklist.txt"
-    echo "  JSON:        GET http://ddos-agent.ddos-protection.svc.cluster.local:8080/blocklist"
-    echo ""
-    echo "  Verifică la fiecare request dacă IP-ul (CF-Connecting-IP) e în listă."
-    echo "  Returnează 403 dacă e blocat."
-    ;;
-esac
+'''
+    # Inserează după imports (după ultima linie care începe cu import)
+    lines = content.split("\n")
+    last_import = 0
+    for i, line in enumerate(lines):
+        if line.startswith("import "):
+            last_import = i
+    lines.insert(last_import + 1, ddos_block)
+    content = "\n".join(lines)
+
+    # Înlocuiește export function middleware cu export async function
+    content = content.replace(
+        "export function middleware(",
+        "export async function middleware("
+    )
+
+    # Injectează check la începutul middleware-ului
+    mw_start = content.find("export async function middleware(")
+    body_start = content.find("{", mw_start) + 1
+    # Găsește primul newline după {
+    nl = content.find("\n", body_start)
+    check = """
+  const _ip = request.headers.get("cf-connecting-ip")?.trim() ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (await isBlockedIp(_ip)) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+"""
+    content = content[:nl] + check + content[nl:]
+    open("$MIDDLEWARE", "w").write(content)
+    print("middleware.ts actualizat cu DDoS block")
+PYEOF
+      success "middleware.ts actualizat"
+      ;;
+
+    3)
+      warn "Tip 'Altul' — integrarea manuală e necesară."
+      echo "  Consumă: http://ddos-agent.ddos-protection.svc.cluster.local:8080/blocklist.txt"
+      ;;
+  esac
+
+  # Commit + push în repo-ul aplicației
+  cd "$CLONE_DIR"
+  git config user.email "ddos-script@local" 2>/dev/null || true
+  git config user.name "ddos-script" 2>/dev/null || true
+
+  if git diff --quiet && git diff --staged --quiet; then
+    info "Nu sunt modificări în repo-ul aplicației"
+  else
+    git add -A
+    git commit -m "feat: integrate DDoS blocklist protection via ddos-agent"
+    git push && success "Repo aplicație pushuit: $APP_REPO_URL" || \
+      warn "Push eșuat — verifică permisiunile SSH/token pentru $APP_REPO_URL"
+  fi
+
+  rm -rf "$CLONE_DIR"
+fi
 
 # =============================================================================
 # Sumar
 # =============================================================================
-step "Sumar"
+step "Sumar final"
 echo ""
-echo -e "  Namespace:     ${GREEN}$NAMESPACE${NC}"
-echo -e "  App label:     ${GREEN}app=$APP_LABEL${NC}"
+echo -e "  Namespace:  ${GREEN}$NAMESPACE${NC}"
+echo -e "  App label:  ${GREEN}app=$APP_LABEL${NC}"
+echo -e "  Repo:       ${GREEN}${APP_REPO_URL:-manual}${NC}"
 echo ""
-echo -e "  ${GREEN}✓${NC} Configmap actualizat (LOKI_NAMESPACES, PROTECTED_NAMESPACES)"
+echo -e "  ${GREEN}✓${NC} LOKI_NAMESPACES + PROTECTED_NAMESPACES actualizate"
 echo -e "  ${GREEN}✓${NC} CiliumNetworkPolicy creat și aplicat"
-echo -e "  ${GREEN}✓${NC} Git push efectuat"
+echo -e "  ${GREEN}✓${NC} ddos-agent restartat"
+echo -e "  ${GREEN}✓${NC} Git push efectuat (infra)"
+[ -n "$APP_REPO_URL" ] && echo -e "  ${GREEN}✓${NC} Aplicație modificată și pushuit"
 echo ""
-echo -e "  ${YELLOW}Mai trebuie:${NC}"
-echo "  → Integrează blocklist-ul în aplicație (vezi Pasul 5 de mai sus)"
-echo "  → Build + push imagine nouă dacă ai modificat codul"
-echo "  → Asigură-te că aplicația loghează JSON cu câmpul 'ip' (pentru detecție Loki)"
+if [ -n "$APP_REPO_URL" ]; then
+  echo -e "  ${YELLOW}Mai trebuie:${NC}"
+  echo "  → Build + push imagine nouă (CI/CD sau manual)"
+  echo "  → Asigură-te că aplicația loghează JSON cu câmpul 'ip'"
+fi
 echo ""
