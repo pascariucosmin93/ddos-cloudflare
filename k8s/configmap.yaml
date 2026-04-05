@@ -6,7 +6,7 @@ metadata:
 data:
   # Loki — sursa de date
   LOKI_URL: "http://10.90.90.32:3100"
-  LOKI_NAMESPACES: "cv|gaz"                  # namespace-uri monitorizate (regex)
+  LOKI_NAMESPACES: "cv|gaz|employee-leave"                  # namespace-uri monitorizate (regex)
 
   # Praguri
   THRESHOLD_RPM: "20"                     
@@ -20,7 +20,7 @@ data:
   # Provider blocare: cloudflare | cilium | both
   BLOCK_MODE: "cloudflare"
   POLICY_NAME: "ddos-blocklist"
-  PROTECTED_NAMESPACES: "cv|gaz"
+  PROTECTED_NAMESPACES: "cv|gaz|employee-leave"
 
   # Shared blocklist for app-level filtering (CF-Connecting-IP)
   BLOCKLIST_SYNC_ENABLED: "true"
