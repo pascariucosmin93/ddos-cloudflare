@@ -39,15 +39,74 @@ step "Configurare aplicație nouă"
 if [ -n "$1" ]; then NAMESPACE="$1"; else read -rp "  Namespace Kubernetes: " NAMESPACE; fi
 [ -z "$NAMESPACE" ] && error "Namespace-ul nu poate fi gol."
 
-if [ -n "$2" ]; then APP_LABEL="$2"; else read -rp "  Label aplicație (app=?): " APP_LABEL; fi
+# --- Detectare automată label din cluster ---
+info "Detectez pods în namespace '$NAMESPACE' ..."
+POD_INFO=$($KUBECTL get pods -n "$NAMESPACE" --no-headers 2>/dev/null | head -5)
+if [ -z "$POD_INFO" ]; then
+  warn "Nu găsesc pods în namespace '$NAMESPACE'. Introduci manual."
+  read -rp "  Label aplicație (app=?): " APP_LABEL
+else
+  echo ""
+  echo "  Pods găsite:"
+  $KUBECTL get pods -n "$NAMESPACE" --show-labels --no-headers 2>/dev/null | \
+    awk '{printf "    %-45s %s\n", $1, $NF}' | head -10
+
+  # Extrage toate valorile unice de app= din labels
+  DETECTED_LABELS=$($KUBECTL get pods -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.labels.app}{"\n"}{end}' 2>/dev/null | sort -u | grep -v '^$')
+
+  if [ -n "$DETECTED_LABELS" ]; then
+    echo ""
+    echo "  Labels detectate (app=):"
+    i=1
+    while IFS= read -r lbl; do
+      echo "    $i) $lbl"
+      i=$((i+1))
+    done <<< "$DETECTED_LABELS"
+
+    echo "    $i) Introduc manual"
+    read -rp "  Alege [1-$i]: " LABEL_CHOICE
+
+    LABEL_COUNT=$(echo "$DETECTED_LABELS" | wc -l | tr -d ' ')
+    if [ "$LABEL_CHOICE" -le "$LABEL_COUNT" ] 2>/dev/null; then
+      APP_LABEL=$(echo "$DETECTED_LABELS" | sed -n "${LABEL_CHOICE}p")
+      success "Label selectat: app=$APP_LABEL"
+    else
+      read -rp "  Label aplicație (app=?): " APP_LABEL
+    fi
+  else
+    warn "Nu am găsit label 'app=' pe pods. Introduci manual."
+    read -rp "  Label aplicație (app=?): " APP_LABEL
+  fi
+fi
 [ -z "$APP_LABEL" ] && error "Label-ul nu poate fi gol."
+
+# --- Detectare automată tip aplicație din imaginea containerului ---
+info "Detectez tipul aplicației din imagine ..."
+CONTAINER_IMAGE=$($KUBECTL get pods -n "$NAMESPACE" -l "app=$APP_LABEL" \
+  -o jsonpath='{.items[0].spec.containers[0].image}' 2>/dev/null)
+
+if echo "$CONTAINER_IMAGE" | grep -qi "nginx"; then
+  DETECTED_TYPE="1"
+  info "Detectat: nginx ($CONTAINER_IMAGE)"
+elif echo "$CONTAINER_IMAGE" | grep -qi "node\|next"; then
+  DETECTED_TYPE="2"
+  info "Detectat: Next.js ($CONTAINER_IMAGE)"
+else
+  DETECTED_TYPE=""
+  info "Imagine: $CONTAINER_IMAGE"
+fi
 
 echo ""
 echo "  Tip aplicație:"
 echo "  1) nginx (static site)"
 echo "  2) Next.js (middleware.ts)"
 echo "  3) Altul (manual)"
-read -rp "  Alege [1/2/3]: " APP_TYPE
+if [ -n "$DETECTED_TYPE" ]; then
+  read -rp "  Alege [1/2/3] (detectat: $DETECTED_TYPE): " APP_TYPE
+  APP_TYPE="${APP_TYPE:-$DETECTED_TYPE}"
+else
+  read -rp "  Alege [1/2/3]: " APP_TYPE
+fi
 
 echo ""
 read -rp "  URL repo Git (SSH sau HTTPS, Enter pentru skip): " APP_REPO_URL
