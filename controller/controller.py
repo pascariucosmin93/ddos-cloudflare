@@ -37,6 +37,8 @@ LEGACY_WHITELIST = [v.strip() for v in os.getenv('WHITELIST_IPS', '').split(',')
 global_blocks: dict[str, datetime] = {}
 node_reports: dict[str, dict] = {}
 state_lock = threading.Lock()
+startup_lock = threading.Lock()
+startup_done = False
 
 trusted_networks: list[ipaddress._BaseNetwork] = []
 for value in TRUSTED_CIDRS_RAW + LEGACY_WHITELIST:
@@ -276,7 +278,12 @@ def manual_unblock(ip: str):
     return jsonify({'status': 'not_found', 'ip': ip}), 404
 
 
-if __name__ == '__main__':
+def start_background_tasks() -> None:
+    global startup_done
+    with startup_lock:
+        if startup_done:
+            return
+
     log.info('Starting DDoS controller')
     log.info(
         f'Global blocks enabled={ENABLE_GLOBAL_BLOCKS}, threshold={GLOBAL_BLOCK_THRESHOLD}, '
@@ -284,4 +291,11 @@ if __name__ == '__main__':
     )
     t = threading.Thread(target=sync_loop, daemon=True)
     t.start()
+    startup_done = True
+
+
+start_background_tasks()
+
+
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)

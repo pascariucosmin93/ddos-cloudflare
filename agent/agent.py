@@ -69,6 +69,8 @@ last_scan_at: datetime | None = None
 blocklist_last_sync_at: datetime | None = None
 blocklist_last_sync_error: str | None = None
 state_lock = threading.Lock()
+startup_lock = threading.Lock()
+startup_done = False
 
 # ---------------------------------------------------------------------------
 # Kubernetes / Cilium
@@ -873,7 +875,12 @@ def manual_unblock():
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-if __name__ == '__main__':
+def start_background_tasks() -> None:
+    global startup_done
+    with startup_lock:
+        if startup_done:
+            return
+
     log.info(f'Starting DDoS agent — node={NODE_NAME}')
     log.info(f'Loki={LOKI_URL}, namespaces={LOKI_NAMESPACES}')
     log.info(f'Threshold={THRESHOLD_RPM} rpm, TTL={BLOCK_TTL}s, poll={POLL_INTERVAL}s')
@@ -891,4 +898,11 @@ if __name__ == '__main__':
     sync_shared_blocklist_configmap([])
 
     threading.Thread(target=monitor_loop, daemon=True).start()
+    startup_done = True
+
+
+start_background_tasks()
+
+
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
