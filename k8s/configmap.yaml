@@ -9,7 +9,7 @@ data:
   LOKI_NAMESPACES: "cv|gaz|employee-leave"                  # namespace-uri monitorizate (regex)
 
   # Praguri
-  THRESHOLD_RPM: "20"                     
+  THRESHOLD_RPM: "100"                     
 # requesturi/minut per IP
   BLOCK_TTL_SECONDS: "600"                   
 # 5 minute blocat
