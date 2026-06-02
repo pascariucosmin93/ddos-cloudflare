@@ -19,8 +19,6 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - operator: Exists
-      imagePullSecrets:
-        - name: ghcr-pull-secret
       initContainers:
         - name: load-conntrack
           image: busybox
